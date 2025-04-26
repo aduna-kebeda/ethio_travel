@@ -8,6 +8,6 @@ def update_published_at(sender, instance, created, **kwargs):
     """
     Update the date field when a post is published
     """
-    if instance.status == 'published' and not instance.createdAt:
-        instance.createdAt = timezone.now()
-        instance.save(update_fields=['createdAt']) 
+    if instance.status == 'published' and not instance.created_at:
+        instance.created_at = timezone.now()
+        instance.save(update_fields=['created_at']) 

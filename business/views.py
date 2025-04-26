@@ -8,6 +8,8 @@ from .serializers import (
     BusinessListSerializer, BusinessDetailSerializer, BusinessCreateSerializer,
     BusinessReviewSerializer, BusinessReviewCreateSerializer, SavedBusinessSerializer
 )
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
@@ -32,6 +34,15 @@ class BusinessViewSet(viewsets.ModelViewSet):
             return BusinessDetailSerializer
         return BusinessListSerializer
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Create a new business",
+        request_body=BusinessCreateSerializer,
+        responses={
+            201: BusinessDetailSerializer,
+            400: "Bad Request"
+        }
+    )
     def create(self, request, *args, **kwargs):
         if request.method == 'GET':
             return Response({
@@ -64,60 +75,101 @@ class BusinessViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="List all businesses",
+        manual_parameters=[
+            openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by status"),
+            openapi.Parameter('business_type', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by business type"),
+            openapi.Parameter('region', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by region"),
+            openapi.Parameter('city', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Filter by city"),
+            openapi.Parameter('search', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Search by name or description"),
+            openapi.Parameter('order_by', openapi.IN_QUERY, type=openapi.TYPE_STRING, description="Order by rating or date")
+        ],
+        responses={
+            200: BusinessListSerializer(many=True)
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
 
-    def get_queryset(self):
-        queryset = Business.objects.all()
-        
-        # Filter by status
-        status = self.request.query_params.get('status', None)
-        if status:
-            queryset = queryset.filter(status=status)
-        
-        # Filter by business type
-        business_type = self.request.query_params.get('business_type', None)
-        if business_type:
-            queryset = queryset.filter(business_type=business_type)
-        
-        # Filter by region
-        region = self.request.query_params.get('region', None)
-        if region:
-            queryset = queryset.filter(region=region)
-        
-        # Filter by city
-        city = self.request.query_params.get('city', None)
-        if city:
-            queryset = queryset.filter(city=city)
-        
-        # Search by name or description
-        search = self.request.query_params.get('search', None)
-        if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) | Q(description__icontains=search)
-            )
-        
-        # Order by rating
-        order_by = self.request.query_params.get('order_by', None)
-        if order_by == 'rating':
-            queryset = queryset.order_by('-average_rating')
-        elif order_by == 'date':
-            queryset = queryset.order_by('-created_at')
-        
-        return queryset
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Retrieve a business",
+        responses={
+            200: BusinessDetailSerializer,
+            404: "Not Found"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Update a business",
+        request_body=BusinessDetailSerializer,
+        responses={
+            200: BusinessDetailSerializer,
+            400: "Bad Request",
+            404: "Not Found"
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Delete a business",
+        responses={
+            204: "No Content",
+            404: "Not Found"
+        }
+    )
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="List featured businesses",
+        responses={
+            200: BusinessListSerializer(many=True)
+        }
+    )
     @action(detail=False, methods=['get'])
     def featured(self, request):
         featured_businesses = self.get_queryset().filter(is_featured=True)
         serializer = self.get_serializer(featured_businesses, many=True)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="List user's businesses",
+        responses={
+            200: BusinessListSerializer(many=True)
+        }
+    )
     @action(detail=False, methods=['get'])
     def my_businesses(self, request):
         my_businesses = self.get_queryset().filter(owner=request.user)
         serializer = self.get_serializer(my_businesses, many=True)
         return Response(serializer.data)
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Toggle business featured status",
+        responses={
+            200: openapi.Response(
+                description="Featured status toggled",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'is_featured': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            ),
+            403: "Forbidden"
+        }
+    )
     @action(detail=True, methods=['post'])
     def toggle_featured(self, request, pk=None):
         business = self.get_object()
@@ -130,6 +182,22 @@ class BusinessViewSet(viewsets.ModelViewSet):
         business.save()
         return Response({"is_featured": business.is_featured})
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Verify a business",
+        responses={
+            200: openapi.Response(
+                description="Business verified",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'is_verified': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            ),
+            403: "Forbidden"
+        }
+    )
     @action(detail=True, methods=['post'])
     def verify(self, request, pk=None):
         business = self.get_object()
@@ -158,6 +226,49 @@ class BusinessReviewViewSet(viewsets.ModelViewSet):
         business = get_object_or_404(Business, pk=self.kwargs['business_pk'])
         serializer.save(business=business)
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Create a business review",
+        request_body=BusinessReviewCreateSerializer,
+        responses={
+            201: BusinessReviewSerializer,
+            400: "Bad Request"
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="List business reviews",
+        responses={
+            200: BusinessReviewSerializer(many=True)
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Report a review",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'reason': openapi.Schema(type=openapi.TYPE_STRING)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Review reported",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        }
+    )
     @action(detail=True, methods=['post'])
     def report(self, request, pk=None, business_pk=None):
         review = self.get_object()
@@ -167,6 +278,21 @@ class BusinessReviewViewSet(viewsets.ModelViewSet):
         review.save()
         return Response({"status": "review reported"})
 
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Mark review as helpful",
+        responses={
+            200: openapi.Response(
+                description="Helpful votes updated",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'helpful_votes': openapi.Schema(type=openapi.TYPE_INTEGER)
+                    }
+                )
+            )
+        }
+    )
     @action(detail=True, methods=['post'])
     def helpful(self, request, pk=None, business_pk=None):
         review = self.get_object()
@@ -183,4 +309,25 @@ class SavedBusinessViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         business = get_object_or_404(Business, pk=self.kwargs['business_pk'])
-        serializer.save(user=self.request.user, business=business) 
+        serializer.save(user=self.request.user, business=business)
+
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="Save a business",
+        responses={
+            201: SavedBusinessSerializer,
+            400: "Bad Request"
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Business'],
+        operation_description="List saved businesses",
+        responses={
+            200: SavedBusinessSerializer(many=True)
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs) 

@@ -21,10 +21,8 @@ class LoginSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = [
-            'username', 'email', 'first_name', 'last_name',
-            'role', 'status', 'email_verified', 'image'
-        ]
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'status', 'email_verified']
+        ref_name = 'UserSerializer'
         read_only_fields = ['role', 'status', 'email_verified']
 
 class UserCreateSerializer(serializers.ModelSerializer):

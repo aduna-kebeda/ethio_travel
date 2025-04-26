@@ -1,34 +1,34 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, ProfileViewSet, BusinessProfileViewSet
-from rest_framework.authtoken.views import obtain_auth_token
-from rest_framework.authentication import SessionAuthentication
-from rest_framework.decorators import authentication_classes
+from .views import (
+    UserViewSet, ProfileViewSet,
+    BusinessProfileViewSet
+)
 
 app_name = 'users'
 
 # Create a router and register our viewsets with it
 router = DefaultRouter()
+router.register(r'', UserViewSet, basename='user')
+router.register(r'profiles', ProfileViewSet, basename='profile')
+router.register(r'business-profiles', BusinessProfileViewSet, basename='business-profile')
 
 # The API URLs are determined by explicit URL patterns
 urlpatterns = [
+    path('', include(router.urls)),
+    
     # Authentication endpoints
-    path('login/', UserViewSet.as_view({'post': 'login', 'get': 'login'}), name='user-login'),
-    path('register/', UserViewSet.as_view({'post': 'register', 'get': 'register'}), name='user-register'),
+    path('register/', UserViewSet.as_view({'post': 'register'}), name='user-register'),
+    path('verify-email/', UserViewSet.as_view({'post': 'verify_email'}), name='user-verify-email'),
+    path('forgot-password/', UserViewSet.as_view({'post': 'forgot_password'}), name='user-forgot-password'),
+    path('change-password/', UserViewSet.as_view({'post': 'change_password'}), name='user-change-password'),
+    path('change-email/', UserViewSet.as_view({'post': 'change_email'}), name='user-change-email'),
     path('logout/', UserViewSet.as_view({'post': 'logout'}), name='user-logout'),
+    path('login/', UserViewSet.as_view({'post': 'login'}), name='user-login'),
+    path('me/', UserViewSet.as_view({'get': 'me'}), name='user-me'),
     
     # Email verification endpoints
-    path('verify_email/', UserViewSet.as_view({'post': 'verify_email'}), name='user-verify-email'),
     path('resend_verification/', UserViewSet.as_view({'post': 'resend_verification'}), name='user-resend-verification'),
-    path('change_email/', UserViewSet.as_view({'post': 'change_email'}), name='user-change-email'),
-    
-    # Password management endpoints
-    path('forgot_password/', UserViewSet.as_view({'post': 'forgot_password'}), name='user-forgot-password'),
-    path('reset_password/<str:token>/', UserViewSet.as_view({'post': 'reset_password'}), name='user-reset-password'),
-    path('change_password/', UserViewSet.as_view({'post': 'change_password'}), name='user-change-password'),
-    
-    # User profile endpoint
-    path('me/', UserViewSet.as_view({'get': 'me'}), name='user-me'),
     
     # Admin management endpoints
     path('management/', include([
@@ -41,28 +41,6 @@ urlpatterns = [
         }), name='user-detail'),
         path('<int:pk>/toggle_active/', UserViewSet.as_view({'post': 'toggle_active'}), name='user-toggle-active'),
         path('<int:pk>/toggle_staff/', UserViewSet.as_view({'post': 'toggle_staff'}), name='user-toggle-staff'),
-    ])),
-    
-    # Profile management
-    path('profiles/', include([
-        path('', ProfileViewSet.as_view({'get': 'list', 'post': 'create'}), name='profile-list'),
-        path('<int:pk>/', ProfileViewSet.as_view({
-            'get': 'retrieve',
-            'put': 'update',
-            'patch': 'partial_update',
-            'delete': 'destroy'
-        }), name='profile-detail'),
-    ])),
-    
-    # Business profile management
-    path('business_profiles/', include([
-        path('', BusinessProfileViewSet.as_view({'get': 'list', 'post': 'create'}), name='business-profile-list'),
-        path('<int:pk>/', BusinessProfileViewSet.as_view({
-            'get': 'retrieve',
-            'put': 'update',
-            'patch': 'partial_update',
-            'delete': 'destroy'
-        }), name='business-profile-detail'),
     ])),
 ]
 

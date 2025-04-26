@@ -1,11 +1,8 @@
 from rest_framework import serializers
 from .models import BlogPost, BlogComment, SavedPost
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from django.utils.text import slugify
-from bson import ObjectId
-from rest_framework.exceptions import ValidationError
-import uuid
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -13,63 +10,97 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        read_only_fields = fields
 
 class BlogPostSerializer(serializers.ModelSerializer):
+    author_details = UserSerializer(source='author', read_only=True)
+    tags = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
+    
     class Meta:
         model = BlogPost
         fields = [
-            'id', 'title', 'slug', 'excerpt', 'content', 'tags',
-            'imageUrl', 'author', 'authorName', 'authorImage',
+            'id', 'title', 'slug', 'excerpt', 'content', 'tags', 'imageUrl',
+            'author', 'author_details', 'authorName', 'authorImage',
             'status', 'views', 'readTime', 'featured',
-            'createdAt', 'updatedAt'
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ['slug', 'author', 'authorName', 'authorImage', 'views', 'readTime', 'createdAt', 'updatedAt']
+        read_only_fields = [
+            'id', 'slug', 'views', 'author_details',
+            'created_at', 'updated_at'
+        ]
+        extra_kwargs = {
+            'author': {'write_only': True, 'required': False},
+            'authorName': {'required': False},
+            'authorImage': {'required': False, 'allow_null': True},
+            'status': {'default': 'draft'},
+            'featured': {'default': False},
+            'readTime': {'required': False, 'default': 5}
+        }
 
     def create(self, validated_data):
-        request = self.context.get('request')
-        
-        # Set author info
-        validated_data['author'] = request.user
-        validated_data['authorName'] = request.user.get_full_name() or request.user.username
-        validated_data['authorImage'] = request.user.profile_image.url if hasattr(request.user, 'profile_image') else None
-        
-        # Generate unique slug
+        # Generate base slug
         base_slug = slugify(validated_data['title'])
-        unique_id = str(uuid.uuid4())[:8]
-        validated_data['slug'] = f"{base_slug}-{unique_id}"
+        validated_data['slug'] = base_slug
         
-        # Calculate read time
-        word_count = len(validated_data.get('content', '').split())
-        validated_data['readTime'] = f"{max(1, round(word_count / 200))} min read"
+        # Check if slug exists and append timestamp if it does
+        if BlogPost.objects.filter(slug=base_slug).exists():
+            timestamp = timezone.now().strftime('%Y%m%d-%H%M%S')
+            validated_data['slug'] = f"{base_slug}-{timestamp}"
         
-        # Set defaults
-        validated_data['views'] = 0
-        validated_data['featured'] = validated_data.get('featured', False)
+        # Set author if not provided
+        if 'author' not in validated_data:
+            validated_data['author'] = self.context['request'].user
+        
+        # Set authorName if not provided
+        if 'authorName' not in validated_data:
+            user = validated_data.get('author')
+            if user:
+                validated_data['authorName'] = user.get_full_name() or user.username
         
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        # Update slug if title changes
-        if 'title' in validated_data and validated_data['title'] != instance.title:
-            base_slug = slugify(validated_data['title'])
-            unique_id = str(uuid.uuid4())[:8]
-            validated_data['slug'] = f"{base_slug}-{unique_id}"
-        
-        # Update read time if content changes
-        if 'content' in validated_data:
-            word_count = len(validated_data['content'].split())
-            validated_data['readTime'] = f"{max(1, round(word_count / 200))} min read"
-        
+        if 'title' in validated_data:
+            validated_data['slug'] = slugify(validated_data['title'])
         return super().update(instance, validated_data)
 
 class BlogCommentSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    post_details = serializers.SerializerMethodField()
+
     class Meta:
         model = BlogComment
-        fields = ['id', 'post', 'user', 'content', 'createdAt']
-        read_only_fields = ['user', 'createdAt']
+        fields = ['id', 'post', 'post_details', 'user', 'content', 'created_at']
+        read_only_fields = ['user', 'created_at']
+        extra_kwargs = {
+            'post': {'write_only': True}
+        }
+
+    def get_post_details(self, obj):
+        return {
+            'title': obj.post.title,
+            'slug': obj.post.slug
+        }
 
 class SavedPostSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    post_details = serializers.SerializerMethodField()
+
     class Meta:
         model = SavedPost
-        fields = ['id', 'user', 'post', 'savedAt']
-        read_only_fields = ['user', 'savedAt'] 
+        fields = ['id', 'user', 'post', 'post_details', 'saved_at']
+        read_only_fields = ['user', 'saved_at']
+        extra_kwargs = {
+            'post': {'write_only': True}
+        }
+
+    def get_post_details(self, obj):
+        return {
+            'title': obj.post.title,
+            'slug': obj.post.slug,
+            'imageUrl': obj.post.imageUrl
+        }

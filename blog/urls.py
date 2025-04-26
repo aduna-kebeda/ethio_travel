@@ -5,41 +5,55 @@ from .views import (
     SavedPostViewSet
 )
 
+app_name = 'blog'
+
 router = DefaultRouter()
-router.register(r'posts', BlogPostViewSet)
+router.register(r'posts', BlogPostViewSet, basename='post')
 router.register(r'comments', BlogCommentViewSet, basename='comment')
 router.register(r'saved', SavedPostViewSet, basename='saved')
 
+# Additional URL patterns that aren't covered by the ViewSet routes
 urlpatterns = [
     path('', include(router.urls)),
+    
+    # Post related endpoints
+    path('posts/featured/', BlogPostViewSet.as_view({'get': 'list'}), name='featured-posts'),
+    path('posts/my_posts/', BlogPostViewSet.as_view({'get': 'list'}), name='my-posts'),
+    path('posts/<int:pk>/toggle_featured/', BlogPostViewSet.as_view({'post': 'toggle_featured'}), name='toggle-featured'),
+    path('posts/<int:pk>/view/', BlogPostViewSet.as_view({'post': 'view'}), name='view-post'),
+    
+    # Comment related endpoints
+    path('posts/<int:post_pk>/comments/', BlogCommentViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='post-comments'),
+    path('posts/<int:post_pk>/comments/<int:pk>/', BlogCommentViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'delete': 'destroy'
+    }), name='comment-detail'),
+    path('posts/<int:post_pk>/comments/<int:pk>/report/', BlogCommentViewSet.as_view({'post': 'report'}), name='report-comment'),
+    path('posts/<int:post_pk>/comments/<int:pk>/helpful/', BlogCommentViewSet.as_view({'post': 'mark_helpful'}), name='helpful-comment'),
+    
+    # Saved posts endpoints
+    path('posts/<int:post_pk>/saved/', SavedPostViewSet.as_view({
+        'get': 'list',
+        'post': 'create'
+    }), name='post-saved'),
+    path('posts/<int:post_pk>/saved/<int:pk>/', SavedPostViewSet.as_view({
+        'delete': 'destroy'
+    }), name='saved-detail'),
+    
+    # Subscription endpoints (assuming you'll create these views later)
+    path('subscriptions/', include([
+        path('', BlogPostViewSet.as_view({
+            'get': 'list',
+            'post': 'create'
+        }), name='subscription-list'),
+        path('<int:pk>/', BlogPostViewSet.as_view({
+            'get': 'retrieve',
+            'put': 'update',
+            'delete': 'destroy'
+        }), name='subscription-detail'),
+    ])),
 ]
-
-# Available endpoints:
-# GET /api/blog/categories/ - List all categories
-# POST /api/blog/categories/ - Create a new category
-# GET /api/blog/categories/{id}/ - Retrieve a specific category
-# PUT /api/blog/categories/{id}/ - Update a specific category
-# DELETE /api/blog/categories/{id}/ - Delete a specific category
-# GET /api/blog/posts/ - List all blog posts
-# POST /api/blog/posts/ - Create a new blog post
-# GET /api/blog/posts/{id}/ - Retrieve a specific blog post
-# PUT /api/blog/posts/{id}/ - Update a specific blog post
-# DELETE /api/blog/posts/{id}/ - Delete a specific blog post
-# GET /api/blog/posts/featured/ - List featured posts
-# GET /api/blog/posts/my_posts/ - List user's posts
-# POST /api/blog/posts/{id}/toggle_featured/ - Toggle featured status (staff only)
-# GET /api/blog/posts/{post_pk}/comments/ - List comments for a post
-# POST /api/blog/posts/{post_pk}/comments/ - Create a comment for a post
-# GET /api/blog/posts/{post_pk}/comments/{id}/ - Retrieve a specific comment
-# PUT /api/blog/posts/{post_pk}/comments/{id}/ - Update a specific comment
-# DELETE /api/blog/posts/{post_pk}/comments/{id}/ - Delete a specific comment
-# POST /api/blog/posts/{post_pk}/comments/{id}/report/ - Report a comment
-# POST /api/blog/posts/{post_pk}/comments/{id}/helpful/ - Mark a comment as helpful
-# GET /api/blog/posts/{post_pk}/saved/ - List saved posts for a user
-# POST /api/blog/posts/{post_pk}/saved/ - Save a post
-# DELETE /api/blog/posts/{post_pk}/saved/{id}/ - Remove a saved post
-# GET /api/blog/subscriptions/ - List all subscriptions
-# POST /api/blog/subscriptions/ - Create a new subscription
-# GET /api/blog/subscriptions/{id}/ - Retrieve a specific subscription
-# PUT /api/blog/subscriptions/{id}/ - Update a specific subscription
-# DELETE /api/blog/subscriptions/{id}/ - Delete a specific subscription 

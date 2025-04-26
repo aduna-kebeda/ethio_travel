@@ -23,6 +23,8 @@ from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.contrib.auth import authenticate
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 logger = logging.getLogger(__name__)
 
@@ -91,31 +93,63 @@ class UserViewSet(viewsets.ModelViewSet):
             logger.error(f"Failed to send verification code to {user.email}: {str(e)}")
             return False
 
-   
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Register a new user",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['username', 'email', 'password', 'password2', 'first_name', 'last_name', 'role'],
+            properties={
+                'username': openapi.Schema(type=openapi.TYPE_STRING),
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD),
+                'password2': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD),
+                'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                'role': openapi.Schema(type=openapi.TYPE_STRING, enum=['user', 'business_owner', 'admin'])
+            }
+        ),
+        responses={
+            201: openapi.Response(
+                description="User registered successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'data': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'user': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'role': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'email_verified': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                                    }
+                                ),
+                                'access_token': openapi.Schema(type=openapi.TYPE_STRING),
+                                'refresh_token': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        )
+                    }
+                )
+            ),
+            400: "Bad Request"
+        }
+    )
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
-        if request.method == 'GET':
-            return Response({
-                'message': 'Please provide the following information to register',
-                'fields': {
-                    'username': 'string',
-                    'email': 'string',
-                    'password': 'string',
-                    'password2': 'string',
-                    'first_name': 'string',
-                    'last_name': 'string',
-                    'role': 'string (user, business_owner, admin)'
-                }
-            })
-            
         serializer = UserCreateSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            
-            # Try to send verification email
-            email_sent = self.send_verification_email(user)
-            
             refresh = RefreshToken.for_user(user)
-            response_data = {
+            return Response({
                 'status': 'success',
                 'message': 'Registration successful',
                 'data': {
@@ -123,16 +157,7 @@ class UserViewSet(viewsets.ModelViewSet):
                     'access_token': str(refresh.access_token),
                     'refresh_token': str(refresh)
                 }
-            }
-            
-            if email_sent:
-                response_data['message'] += ', verification code sent to your email'
-            else:
-                response_data['message'] += ', but verification code could not be sent'
-                if settings.DEBUG:
-                    response_data['verification_code'] = user.verification_code
-            
-            return Response(response_data, status=status.HTTP_201_CREATED)
+            }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'])
@@ -209,7 +234,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 return Response({
                     'status': 'error',
                     'message': 'Failed to send verification code'
-                @action(detail=False, methods=['post'], permission_classes=[AllowAny]) }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                 
         except User.DoesNotExist:
             # For security reasons, don't reveal if the email exists
@@ -311,43 +336,77 @@ class UserViewSet(viewsets.ModelViewSet):
                 'message': 'Invalid reset token'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Change user password",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['current_password', 'new_password', 'new_password2'],
+            properties={
+                'current_password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD),
+                'new_password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD),
+                'new_password2': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Password changed successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Bad Request"
+        }
+    )
+    @action(detail=False, methods=['post'])
     def change_password(self, request):
         serializer = PasswordChangeSerializer(data=request.data)
         if serializer.is_valid():
             user = request.user
             if not user.check_password(serializer.validated_data['current_password']):
-                return Response({
-                    'status': 'error',
-                    'message': 'Current password is incorrect'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
+                return Response({'error': 'Current password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(serializer.validated_data['new_password'])
             user.save()
-            return Response({
-                'status': 'success',
-                'message': 'Password updated successfully'
-            })
+            return Response({'message': 'Password successfully changed'})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Change user email",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Email change request sent",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Bad Request"
+        }
+    )
+    @action(detail=False, methods=['post'])
     def change_email(self, request):
         serializer = EmailChangeSerializer(data=request.data)
         if serializer.is_valid():
             user = request.user
             if not user.check_password(serializer.validated_data['password']):
-                return Response({
-                    'status': 'error',
-                    'message': 'Password is incorrect'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
+                return Response({'error': 'Password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
             new_email = serializer.validated_data['email']
             if User.objects.filter(email=new_email).exists():
-                return Response({
-                    'status': 'error',
-                    'message': 'Email already in use'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
+                return Response({'error': 'Email already in use'}, status=status.HTTP_400_BAD_REQUEST)
             user.email = new_email
             user.email_verified = False
             user.generate_verification_token()
@@ -360,32 +419,68 @@ class UserViewSet(viewsets.ModelViewSet):
                 fail_silently=False,
             )
             user.save()
-            return Response({
-                'status': 'success',
-                'message': 'Verification email sent to new address'
-            })
+            return Response({'message': 'Verification email sent to new address'})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Get current user profile",
+        responses={
+            200: openapi.Response(
+                description="User profile",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                        'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'role': openapi.Schema(type=openapi.TYPE_STRING),
+                        'status': openapi.Schema(type=openapi.TYPE_STRING),
+                        'email_verified': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                    }
+                )
+            )
+        }
+    )
+    @action(detail=False, methods=['get'])
     def me(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Logout user",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['refresh'],
+            properties={
+                'refresh': openapi.Schema(type=openapi.TYPE_STRING)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Logout successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Bad Request"
+        }
+    )
+    @action(detail=False, methods=['post'])
     def logout(self, request):
         try:
-            refresh_token = request.data.get('refresh_token')
+            refresh_token = request.data.get('refresh')
             token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response({
-                'status': 'success',
-                'message': 'Logged out successfully'
-            })
+            return Response({'message': 'Successfully logged out'})
         except Exception as e:
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def toggle_active(self, request, pk=None):
@@ -401,24 +496,61 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save()
         return Response({'is_staff': user.is_staff})
 
-    @action(detail=False, methods=['get', 'post'], permission_classes=[AllowAny])
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Login user",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password'],
+            properties={
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_EMAIL),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD)
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Login successful",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'status': openapi.Schema(type=openapi.TYPE_STRING),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'data': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'user': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'username': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'email': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'role': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'status': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'email_verified': openapi.Schema(type=openapi.TYPE_BOOLEAN)
+                                    }
+                                ),
+                                'access_token': openapi.Schema(type=openapi.TYPE_STRING),
+                                'refresh_token': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        )
+                    }
+                )
+            ),
+            400: "Bad Request",
+            401: "Unauthorized",
+            403: "Forbidden"
+        }
+    )
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
-        if request.method == 'GET':
-            return Response({
-                'message': 'Please provide email and password to login',
-                'fields': {
-                    'email': 'string',
-                    'password': 'string'
-                }
-            })
-            
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data['email']
-            password = serializer.validated_data['password']
-            
-            user = authenticate(email=email, password=password)
-            
+            user = authenticate(
+                email=serializer.validated_data['email'],
+                password=serializer.validated_data['password']
+            )
             if user:
                 if not user.is_active:
                     return Response({
@@ -455,23 +587,95 @@ class ProfileViewSet(viewsets.ModelViewSet):
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
-    def get_queryset(self):
-        if not self.request.user.is_staff:
-            return UserProfile.objects.filter(user=self.request.user)
-        return super().get_queryset()
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Create user profile",
+        request_body=ProfileSerializer,
+        responses={
+            201: ProfileSerializer,
+            400: "Bad Request"
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="List user profiles",
+        responses={
+            200: ProfileSerializer(many=True)
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Retrieve user profile",
+        responses={
+            200: ProfileSerializer,
+            404: "Not Found"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_description="Update user profile",
+        request_body=ProfileSerializer,
+        responses={
+            200: ProfileSerializer,
+            400: "Bad Request",
+            404: "Not Found"
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
 
 class BusinessProfileViewSet(viewsets.ModelViewSet):
     queryset = BusinessOwnerProfile.objects.all()
     serializer_class = BusinessProfileSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
 
-    def get_queryset(self):
-        if not self.request.user.is_staff:
-            return BusinessOwnerProfile.objects.filter(user=self.request.user)
-        return super().get_queryset()
+    @swagger_auto_schema(
+        operation_description="Create business profile",
+        request_body=BusinessProfileSerializer,
+        responses={
+            201: BusinessProfileSerializer,
+            400: "Bad Request"
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    @swagger_auto_schema(
+        operation_description="List business profiles",
+        responses={
+            200: BusinessProfileSerializer(many=True)
+        }
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Retrieve business profile",
+        responses={
+            200: BusinessProfileSerializer,
+            404: "Not Found"
+        }
+    )
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="Update business profile",
+        request_body=BusinessProfileSerializer,
+        responses={
+            200: BusinessProfileSerializer,
+            400: "Bad Request",
+            404: "Not Found"
+        }
+    )
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
